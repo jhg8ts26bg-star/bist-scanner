@@ -6,6 +6,6 @@ services:
     startCommand: python render_bot.py
     envVars:
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        value: 7687246895:AAF2euP3sX0quDqOjwr9B1nClenval93CF0
       - key: WEBHOOK_URL
         value: https://bist-scanner-bot.onrender.com
