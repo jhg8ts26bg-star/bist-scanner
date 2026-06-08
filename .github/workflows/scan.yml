@@ -1,0 +1,85 @@
+name: BIST Gunluk Tarama
+
+on:
+  schedule:
+    - cron: '30 14 * * 1-5'
+  workflow_dispatch:
+
+env:
+  OPENCODE_FINANCE_ROOT: ${{ github.workspace }}/finance_data
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create data directories
+        run: |
+          mkdir -p $OPENCODE_FINANCE_ROOT/reports
+          mkdir -p $OPENCODE_FINANCE_ROOT/cache
+          mkdir -p $OPENCODE_FINANCE_ROOT/data
+
+      - name: Run BIST scanner
+        run: |
+          python scripts/bist_scanner.py \
+            --max-symbols 30 \
+            --period 1y \
+            --timeframe 1d \
+            --fundamental-top 8 \
+            --news-top 8 \
+            --top 15 \
+            --no-desktop-note \
+            --no-performance-memory
+
+      - name: Run safe summary
+        run: |
+          LATEST_JSON=$(ls -t $OPENCODE_FINANCE_ROOT/reports/BIST_SCANNER_*.json 2>/dev/null | head -1)
+          if [ -n "$LATEST_JSON" ]; then
+            python scripts/safe_bist_summary.py --scanner-json "$LATEST_JSON"
+          else
+            echo "No scanner JSON found - summary skipped"
+          fi
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: bist-reports-${{ github.run_id }}
+          path: ${{ env.OPENCODE_FINANCE_ROOT }}/reports/
+          retention-days: 14
+
+      - name: Publish summary to workflow
+        run: |
+          echo "### BIST Scanner Sonucu" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          LATEST_MD=$(ls -t $OPENCODE_FINANCE_ROOT/reports/BIST_SCANNER_*.md 2>/dev/null | head -1)
+          if [ -n "$LATEST_MD" ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Rapor bulunamadi" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Send email notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: BIST Scanner Calismadi!
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: BIST Scanner
+          body: BIST gunluk tarama fail oldu. GitHub Actions logunu kontrol et.
